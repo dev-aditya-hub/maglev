@@ -102,13 +102,18 @@ func (api *RestAPI) arrivalsAndDeparturesForLocationHandler(w http.ResponseWrite
 		return
 	}
 
-	// Record each nearby stop's agency so references namespace it exactly as
-	// nearbyStopIds does, instead of falling back to the matched stops' agency.
+	// Record the agency of each stop the entry names, so references namespace it
+	// exactly as the entry did instead of falling back to the matched stops'
+	// agency. Nearby stops need this because they come from an expanded search
+	// box; arrival and trip-status stops need it because their agency is the
+	// arrival's route agency, which in a multi-agency area need not be the
+	// fallback.
 	for _, n := range lists.nearby {
-		if agencyID, bareID, err := utils.ExtractAgencyIDAndCodeID(n.StopID); err == nil {
-			if _, exists := agencies.byStopID[bareID]; !exists {
-				agencies.byStopID[bareID] = agencyID
-			}
+		recordStopAgency(agencies, n.StopID)
+	}
+	for _, a := range lists.arrivals {
+		for _, id := range arrivalStopIDs(a) {
+			recordStopAgency(agencies, id)
 		}
 	}
 
@@ -216,6 +221,46 @@ func retainTripStatusEntities(refAcc, acc *arrivalsAccumulator, status *models.T
 	retainStop(refAcc, status.NextStop)
 	retainStop(refAcc, status.ClosestStop)
 	retainTrip(refAcc, acc, status.ActiveTripID)
+}
+
+// arrivalStopIDs returns every combined stop ID one arrival names: the stop the
+// arrival is at, plus the stops its trip status points at.
+func arrivalStopIDs(arrival models.ArrivalAndDeparture) []string {
+	ids := make([]string, 0, 3)
+	for _, id := range []string{arrival.StopID, statusNextStop(arrival), statusClosestStop(arrival)} {
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+func statusNextStop(arrival models.ArrivalAndDeparture) string {
+	if arrival.TripStatus == nil {
+		return ""
+	}
+	return arrival.TripStatus.NextStop
+}
+
+func statusClosestStop(arrival models.ArrivalAndDeparture) string {
+	if arrival.TripStatus == nil {
+		return ""
+	}
+	return arrival.TripStatus.ClosestStop
+}
+
+// recordStopAgency notes which agency a combined stop ID was namespaced under,
+// so appendStopReferences reproduces that prefix rather than the search area's
+// fallback agency. An agency already recorded for the stop wins, since it came
+// from the stop's own owner rather than from an ID that merely names it.
+func recordStopAgency(agencies *stopAgencyIndex, combinedStopID string) {
+	agencyID, bareID, err := utils.ExtractAgencyIDAndCodeID(combinedStopID)
+	if err != nil || agencyID == "" {
+		return
+	}
+	if _, exists := agencies.byStopID[bareID]; !exists {
+		agencies.byStopID[bareID] = agencyID
+	}
 }
 
 // retainStop records a combined stop ID under the bare ID appendStopReferences

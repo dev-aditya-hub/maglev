@@ -270,22 +270,6 @@ func TestArrivalsAndDeparturesForLocationMaxCount(t *testing.T) {
 	}
 }
 
-// arrivalStopIDs returns every stop ID one arrival names: its own stop plus the
-// stops its trip status points at.
-func arrivalStopIDs(a models.ArrivalAndDeparture) []string {
-	ids := []string{a.StopID}
-	if a.TripStatus != nil {
-		ids = append(ids, a.TripStatus.NextStop, a.TripStatus.ClosestStop)
-	}
-	kept := make([]string, 0, len(ids))
-	for _, id := range ids {
-		if id != "" {
-			kept = append(kept, id)
-		}
-	}
-	return kept
-}
-
 // TestArrivalsAndDeparturesForLocationReferencesResolveArrivalIDs pins the
 // invariant recordTripStatusReferences exists for: every ID an arrival emits
 // resolves in the references block. The maxCount test covers the truncated
