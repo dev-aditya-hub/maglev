@@ -559,3 +559,41 @@ func TestParseMinutesValueCapsBeforeDurationOverflow(t *testing.T) {
 		parseMinutesValue(url.Values{"minutesBefore": {"-5"}}, "minutesBefore", 5*time.Minute, maxArrivalWindow, addError))
 	assert.Contains(t, collected, "minutesBefore")
 }
+
+// TestRetainedAccumulatorCarriesActiveTripRoute pins that a reassigned active
+// trip reaches the reference build with its route already resolved.
+// recordTripStatusReferences spends a query resolving that route; without it
+// appendTripReferences queries again, and drops the trip reference outright if
+// that query fails.
+func TestRetainedAccumulatorCarriesActiveTripRoute(t *testing.T) {
+	const (
+		agencyID        = "agency"
+		scheduledTripID = "scheduled-trip"
+		scheduledRoute  = "scheduled-route"
+		activeTripID    = "active-trip"
+		activeRouteID   = "active-route"
+	)
+
+	acc := newArrivalsAccumulator(agencyID)
+	acc.trips[scheduledTripID] = &gtfsdb.Trip{ID: scheduledTripID, RouteID: scheduledRoute}
+	acc.routes[scheduledRoute] = &gtfsdb.Route{ID: scheduledRoute, AgencyID: agencyID}
+	// What recordTripStatusReferences resolves for a reassigned active trip.
+	acc.trips[activeTripID] = &gtfsdb.Trip{ID: activeTripID, RouteID: activeRouteID}
+	acc.routes[activeRouteID] = &gtfsdb.Route{ID: activeRouteID, AgencyID: agencyID}
+
+	arrival := models.ArrivalAndDeparture{
+		StopID:  utils.FormCombinedID(agencyID, "stop"),
+		TripID:  utils.FormCombinedID(agencyID, scheduledTripID),
+		RouteID: utils.FormCombinedID(agencyID, scheduledRoute),
+		TripStatus: &models.TripStatus{
+			ActiveTripID: utils.FormCombinedID(agencyID, activeTripID),
+		},
+	}
+
+	refAcc := retainedAccumulator([]models.ArrivalAndDeparture{arrival}, nil, nil, acc)
+
+	require.Contains(t, refAcc.trips, activeTripID, "the active trip must be retained")
+	assert.Contains(t, refAcc.routes, activeRouteID,
+		"the active trip's route must be retained with it, so appendTripReferences needs no refetch")
+	assert.Contains(t, refAcc.routes, scheduledRoute, "the arrival's own route must still be retained")
+}

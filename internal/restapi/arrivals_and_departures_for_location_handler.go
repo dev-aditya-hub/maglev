@@ -272,13 +272,25 @@ func retainStop(refAcc *arrivalsAccumulator, combinedStopID string) {
 }
 
 // retainTrip carries a combined trip ID's entity over from acc, which already
-// resolved it. A trip missing from acc is skipped rather than queried: it would
-// have had to come from a row that never reached the accumulator.
+// resolved it, along with the route that trip belongs to. The route travels
+// with the trip because appendTripReferences needs it to namespace the trip,
+// and refetches it — skipping the trip reference entirely if that query fails —
+// whenever the accumulator it was handed does not already hold it.
+//
+// A trip missing from acc is skipped rather than queried: it would have had to
+// come from a row that never reached the accumulator.
 func retainTrip(refAcc, acc *arrivalsAccumulator, combinedTripID string) {
-	if _, bareID, err := utils.ExtractAgencyIDAndCodeID(combinedTripID); err == nil {
-		if trip, ok := acc.trips[bareID]; ok {
-			refAcc.trips[bareID] = trip
-		}
+	_, bareID, err := utils.ExtractAgencyIDAndCodeID(combinedTripID)
+	if err != nil {
+		return
+	}
+	trip, ok := acc.trips[bareID]
+	if !ok {
+		return
+	}
+	refAcc.trips[bareID] = trip
+	if route, ok := acc.routes[trip.RouteID]; ok {
+		refAcc.routes[trip.RouteID] = route
 	}
 }
 
